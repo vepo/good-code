@@ -31,12 +31,19 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
 
+      - name: Debug versions
+        run: |
+          echo "Tag version: ${{ inputs.ref || github.ref_name }}"
+          echo "POM version: $(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
       - name: Resolve version
         id: version
         run: |
           TAG="${{ inputs.ref || github.ref_name }}"
           VERSION="${TAG#v}"
           POM_VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          echo "Tag: ${TAG}"
+          echo "Version: ${VERSION}"
+          echo "POM version: ${POM_VERSION}"
           if [[ "${POM_VERSION}" != "${VERSION}" ]]; then
             echo "Tag version ${VERSION} does not match pom.xml ${POM_VERSION}" >&2
             exit 1
