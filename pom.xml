@@ -6,7 +6,7 @@
 
     <groupId>dev.vepo</groupId>
     <artifactId>good-code-parent</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
     <packaging>pom</packaging>
     <url>https://github.com/vepo/good-code</url>
     <name>Good Code</name>
