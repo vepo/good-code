@@ -1,0 +1,4 @@
+#!/bin/bash
+mvn clean install                    # builds and installs the plugin
+mvn -f good-code-sample/pom.xml site # runs it against the sample sources
+open good-code-sample/target/site/good-code-report.html

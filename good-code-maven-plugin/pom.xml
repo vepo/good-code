@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vepo.goodcode</groupId>
+        <artifactId>good-code-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>good-code-maven-plugin</artifactId>
+    <packaging>maven-plugin</packaging>
+
+    <name>Good Code Maven Plugin</name>
+    <description>
+        Maven report plugin that walks a project's Java sources and reports lines of
+        code, packages, classes/interfaces/enums/records, fields and methods, then
+        renders the result as an HTML page under target/site, the same way JaCoCo or
+        Checkstyle reports do.
+    </description>
+
+    <properties>
+        <maven.version>3.9.16</maven.version>
+        <maven.plugin.tools.version>3.15.2</maven.plugin.tools.version>
+        <maven.reporting.api.version>3.1.1</maven.reporting.api.version>
+        <maven.reporting.impl.version>3.2.0</maven.reporting.impl.version>
+        <javaparser.version>3.28.2</javaparser.version>
+        <junit.version>5.11.3</junit.version>
+        <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
+    </properties>
+
+    <dependencies>
+        <!-- Maven plugin API -->
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <version>${maven.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+            <version>${maven.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <version>${maven.plugin.tools.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Maven reporting: turns this mojo into a "report" mojo (target/site/*.html) -->
+        <dependency>
+            <groupId>org.apache.maven.reporting</groupId>
+            <artifactId>maven-reporting-api</artifactId>
+            <version>${maven.reporting.api.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.reporting</groupId>
+            <artifactId>maven-reporting-impl</artifactId>
+            <version>${maven.reporting.impl.version}</version>
+            <exclusions>
+                <!-- google-collections is Guava's pre-2010 predecessor; it ships
+                     classes under the same com.google.common.* packages as the
+                     real Guava that javaparser-symbol-solver-core needs, but
+                     without newer methods (e.g. Preconditions.checkState(boolean,
+                     String, Object)). Having both on the plugin realm's classpath
+                     causes NoSuchMethodError when the wrong one gets resolved. -->
+                <exclusion>
+                    <groupId>com.google.collections</groupId>
+                    <artifactId>google-collections</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- doxia-sink-api comes transitively from maven-reporting-impl; don't
+             redeclare it here with a different version, or the Sink API used to
+             write the report (2.x) and the one the site renderer's skin/velocity
+             layer expects (1.x, bundled by maven-reporting-impl 3.2.0) end up
+             mismatched and the report generation fails at runtime. -->
+
+        <!-- Java source parsing -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-symbol-solver-core</artifactId>
+            <version>${javaparser.version}</version>
+        </dependency>
+
+        <!-- Tests -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>${maven.plugin.tools.version}</version>
+                <configuration>
+                    <goalPrefix>good-code</goalPrefix>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>generate-descriptor</id>
+                        <goals>
+                            <goal>descriptor</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>generate-help</id>
+                        <goals>
+                            <goal>helpmojo</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven.surefire.plugin.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
