@@ -2,9 +2,10 @@ package dev.vepo.goodcode.report.render;
 
 import dev.vepo.goodcode.report.model.*;
 import org.apache.maven.doxia.sink.Sink;
+import org.apache.maven.doxia.sink.SinkEventAttributes;
+import org.apache.maven.doxia.sink.impl.SinkEventAttributeSet;
 
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Renders a {@link ProjectStats} into the Doxia {@link Sink}, which the Maven
@@ -58,6 +59,10 @@ public class GoodCodeReportGenerator {
 
         sink.body_();
     }
+
+    // ----------------------------------------
+    // Summary, type breakdown, packages – unchanged
+    // ----------------------------------------
 
     private void summarySection(ProjectStats stats) {
         sink.section1();
@@ -123,6 +128,36 @@ public class GoodCodeReportGenerator {
     }
 
     private void usagesSection(ProjectStats stats) {
+        // Build a structured view: package -> type -> method -> list of class usages
+        Map<String, Map<String, Map<String, List<ClassUsage>>>> data = new LinkedHashMap<>();
+
+        for (PackageInfo pkg : stats.getPackages()) {
+            String pkgName = pkg.getName();
+            Map<String, Map<String, List<ClassUsage>>> typesMap = new LinkedHashMap<>();
+            for (SourceFileInfo file : pkg.getFiles()) {
+                for (ClassInfo type : file.getTypes()) {
+                    String typeQName = type.getQualifiedName();
+                    Map<String, List<ClassUsage>> methodsMap = new LinkedHashMap<>();
+                    for (MethodInfo method : type.getMethods()) {
+                        if (!method.dependsOn().isEmpty()) {
+                            methodsMap.put(method.name(), method.dependsOn());
+                        }
+                    }
+                    if (!methodsMap.isEmpty()) {
+                        typesMap.put(typeQName, methodsMap);
+                    }
+                }
+            }
+            if (!typesMap.isEmpty()) {
+                data.put(pkgName, typesMap);
+            }
+        }
+
+        if (data.isEmpty()) {
+            // No usages to show, maybe skip the section entirely
+            return;
+        }
+
         sink.section1();
         sink.sectionTitle1();
         sink.text("Usages");
@@ -130,26 +165,78 @@ public class GoodCodeReportGenerator {
 
         sink.table();
         headerRow("Package", "Type", "Method", "Class", "Usage");
-        for (PackageInfo pkg : stats.getPackages()) {
-            for (SourceFileInfo file : pkg.getFiles()) {
-                for (ClassInfo type : file.getTypes()) {
-                    for (MethodInfo method : type.getMethods()) {
-                        for (ClassUsage classUsage : method.dependsOn()) {
-                            row(pkg.getName(),
-                                    type.getQualifiedName(),
-                                    method.name(),
-                                    classUsage.fullyQualifiedName(),
-                                    Integer.toString(classUsage.counter()));
+
+        for (Map.Entry<String, Map<String, Map<String, List<ClassUsage>>>> pkgEntry : data.entrySet()) {
+            String pkgName = pkgEntry.getKey();
+            int pkgRowCount = pkgEntry.getValue().values().stream()
+                    .mapToInt(methods -> methods.values().stream().mapToInt(List::size).sum())
+                    .sum();
+
+            boolean firstPkgRow = true;
+            for (Map.Entry<String, Map<String, List<ClassUsage>>> typeEntry : pkgEntry.getValue().entrySet()) {
+                String typeQName = typeEntry.getKey();
+                int typeRowCount = typeEntry.getValue().values().stream().mapToInt(List::size).sum();
+
+                boolean firstTypeRow = true;
+                for (Map.Entry<String, List<ClassUsage>> methodEntry : typeEntry.getValue().entrySet()) {
+                    String methodName = methodEntry.getKey();
+                    List<ClassUsage> usages = methodEntry.getValue();
+                    int methodRowCount = usages.size();
+
+                    boolean firstMethodRow = true;
+                    for (ClassUsage usage : usages) {
+                        sink.tableRow();
+
+                        // Package cell – span only on first row of package
+                        if (firstPkgRow) {
+                            cellWithRowSpan(pkgName, pkgRowCount);
+                            firstPkgRow = false;
                         }
+
+                        // Type cell – span only on first row of type
+                        if (firstTypeRow) {
+                            cellWithRowSpan(typeQName, typeRowCount);
+                            firstTypeRow = false;
+                        }
+
+                        // Method cell – span only on first row of method
+                        if (firstMethodRow) {
+                            cellWithRowSpan(methodName, methodRowCount);
+                            firstMethodRow = false;
+                        }
+
+                        // Class and counter cells (no span)
+                        cell(usage.fullyQualifiedName());
+                        cell(Integer.toString(usage.counter()));
+
+                        sink.tableRow_();
                     }
                 }
             }
         }
+
         sink.table_();
         sink.section1_();
     }
 
     private void classesSection(ProjectStats stats) {
+        // Group types by package
+        Map<String, List<ClassInfo>> packageToTypes = new LinkedHashMap<>();
+        for (PackageInfo pkg : stats.getPackages()) {
+            String pkgName = pkg.getName();
+            List<ClassInfo> types = new ArrayList<>();
+            for (SourceFileInfo file : pkg.getFiles()) {
+                types.addAll(file.getTypes());
+            }
+            if (!types.isEmpty()) {
+                packageToTypes.put(pkgName, types);
+            }
+        }
+
+        if (packageToTypes.isEmpty()) {
+            return;
+        }
+
         sink.section1();
         sink.sectionTitle1();
         sink.text("Types");
@@ -157,22 +244,33 @@ public class GoodCodeReportGenerator {
 
         sink.table();
         headerRow("Package", "Type", "Kind", "Nested", "Abstract", "Lines of code", "Fields", "Methods");
-        for (PackageInfo pkg : stats.getPackages()) {
-            for (SourceFileInfo file : pkg.getFiles()) {
-                for (ClassInfo type : file.getTypes()) {
-                    row(pkg.getName(),
-                            type.getSimpleName(),
-                            capitalize(type.getKind().name()),
-                            type.isNested() ? "yes" : "no",
-                            type.isAbstract() ? "yes" : "no",
-                            String.valueOf(type.getLinesOfCode()),
-                            String.valueOf(type.getFieldCount()),
-                            String.valueOf(type.getMethodCount()));
+
+        for (Map.Entry<String, List<ClassInfo>> pkgEntry : packageToTypes.entrySet()) {
+            String pkgName = pkgEntry.getKey();
+            List<ClassInfo> types = pkgEntry.getValue();
+            int pkgRowCount = types.size();
+
+            boolean firstRow = true;
+            for (ClassInfo type : types) {
+                sink.tableRow();
+
+                if (firstRow) {
+                    cellWithRowSpan(pkgName, pkgRowCount);
+                    firstRow = false;
                 }
+
+                cell(type.getSimpleName());
+                cell(capitalize(type.getKind().name()));
+                cell(type.isNested() ? "yes" : "no");
+                cell(type.isAbstract() ? "yes" : "no");
+                cell(String.valueOf(type.getLinesOfCode()));
+                cell(String.valueOf(type.getFieldCount()));
+                cell(String.valueOf(type.getMethodCount()));
+
+                sink.tableRow_();
             }
         }
         sink.table_();
-
         sink.section1_();
     }
 
@@ -194,6 +292,22 @@ public class GoodCodeReportGenerator {
             sink.tableCell_();
         }
         sink.tableRow_();
+    }
+
+    // Renders a normal table cell
+    private void cell(String text) {
+        sink.tableCell();
+        sink.text(text);
+        sink.tableCell_();
+    }
+
+    // Renders a table cell with a rowspan attribute
+    private void cellWithRowSpan(String text, int rowspan) {
+        var attrs = new SinkEventAttributeSet();
+        attrs.addAttribute(SinkEventAttributes.ROWSPAN, rowspan);
+        sink.tableCell(attrs);
+        sink.text(text);
+        sink.tableCell_();
     }
 
     private String format(double value) {

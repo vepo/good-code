@@ -7,22 +7,12 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.PackageDeclaration;
-import com.github.javaparser.ast.body.AnnotationDeclaration;
-import com.github.javaparser.ast.body.BodyDeclaration;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.ConstructorDeclaration;
-import com.github.javaparser.ast.body.EnumDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.RecordDeclaration;
-import com.github.javaparser.ast.body.TypeDeclaration;
-import com.github.javaparser.ast.body.VariableDeclarator;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.FieldAccessExpr;
-import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.Statement;
+import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
@@ -154,18 +144,182 @@ public class JavaSourceAnalyzer {
         return classInfo;
     }
 
-    private static String extractUsage(Node node) {
-        try {
-            if (node instanceof MethodCallExpr mce) {
-                return mce.resolve().declaringType().getQualifiedName();
-            } else if (node instanceof FieldAccessExpr fae) {
-                return fae.resolve().asField().declaringType().getQualifiedName();
+    private static Stream<Node> expand(Statement stmt) {
+        if (stmt.isBlockStmt()) {
+            return stmt.asBlockStmt().getStatements().stream().flatMap(JavaSourceAnalyzer::expand);
+        } else if (stmt.isIfStmt()) {
+            return expand(stmt.asIfStmt());
+        } else if (stmt.isForEachStmt()) {
+            var forEach = stmt.asForEachStmt();
+            return concat(expand(forEach.getIterable()), expand(forEach.getBody()));
+        } else if (stmt.isForStmt()) {
+            var forStmt = stmt.asForStmt();
+            Stream<Node> init = forStmt.getInitialization().stream().flatMap(JavaSourceAnalyzer::expand);
+            Stream<Node> compare = forStmt.getCompare().map(JavaSourceAnalyzer::expand).orElse(Stream.empty());
+            Stream<Node> update = forStmt.getUpdate().stream().flatMap(JavaSourceAnalyzer::expand);
+            Stream<Node> body = expand(forStmt.getBody());
+            return concat(concat(concat(init, compare), update), body);
+        } else if (stmt.isWhileStmt()) {
+            var whileStmt = stmt.asWhileStmt();
+            return concat(expand(whileStmt.getCondition()), expand(whileStmt.getBody()));
+        } else if (stmt.isDoStmt()) {
+            var doStmt = stmt.asDoStmt();
+            return concat(expand(doStmt.getBody()), expand(doStmt.getCondition()));
+        } else if (stmt.isSwitchStmt()) {
+            var switchStmt = stmt.asSwitchStmt();
+            return concat(expand(switchStmt.getSelector()),
+                    switchStmt.getEntries().stream().flatMap(entry -> {
+                        Stream<Node> labels = entry.getLabels().stream().flatMap(JavaSourceAnalyzer::expand);
+                        Stream<Node> stmts = entry.getStatements().stream().flatMap(JavaSourceAnalyzer::expand);
+                        return concat(labels, stmts);
+                    }));
+        } else if (stmt.isTryStmt()) {
+            var tryStmt = stmt.asTryStmt();
+            Stream<Node> resources = tryStmt.getResources().stream().flatMap(JavaSourceAnalyzer::expand);
+            Stream<Node> body = expand(tryStmt.getTryBlock());
+            Stream<Node> catches = tryStmt.getCatchClauses().stream()
+                    .flatMap(cc -> concat(expand(cc.getParameter()), expand(cc.getBody())));
+            Stream<Node> finallyBlock = tryStmt.getFinallyBlock().map(JavaSourceAnalyzer::expand).orElse(Stream.empty());
+            return concat(concat(concat(resources, body), catches), finallyBlock);
+        } else if (stmt.isSynchronizedStmt()) {
+            var sync = stmt.asSynchronizedStmt();
+            return concat(expand(sync.getExpression()), expand(sync.getBody()));
+        } else if (stmt.isReturnStmt()) {
+            return stmt.asReturnStmt().getExpression().map(JavaSourceAnalyzer::expand).orElse(Stream.empty());
+        } else if (stmt.isThrowStmt()) {
+            return expand(stmt.asThrowStmt().getExpression());
+        } else if (stmt.isAssertStmt()) {
+            var assertStmt = stmt.asAssertStmt();
+            Stream<Node> check = expand(assertStmt.getCheck());
+            Stream<Node> msg = assertStmt.getMessage().map(JavaSourceAnalyzer::expand).orElse(Stream.empty());
+            return concat(check, msg);
+        } else if (stmt.isLabeledStmt()) {
+            return expand(stmt.asLabeledStmt().getStatement());
+//        } else if (stmt.isVariableDeclarationStmt()) {
+//            return stmt.asVariableDeclarationStmt().getVariables().stream().flatMap(JavaSourceAnalyzer::expand);
+        } else if (stmt.isYieldStmt()) {
+            return expand(stmt.asYieldStmt().getExpression());
+        } else if (stmt.isExpressionStmt()) {
+            return expand(stmt.asExpressionStmt().getExpression());
+        } else {
+            // fallback: traverse children generically (e.g. for empty, break, continue – nothing to do)
+            return Stream.empty();
+        }
+    }
+
+    private static Stream<Node> expand(Parameter parameter) {
+        return Stream.empty();
+    }
+
+    private static Stream<Node> expand(Expression expr) {
+        if (expr.isBinaryExpr()) {
+            var bin = expr.asBinaryExpr();
+            return concat(expand(bin.getLeft()), expand(bin.getRight()));
+        } else if (expr.isMethodCallExpr()) {
+            var call = expr.asMethodCallExpr();
+            if (call.getScope().isPresent()) {
+                return concat(expand(call.getScope().get()), concat(Stream.of(call),
+                        call.getArguments().stream().flatMap(JavaSourceAnalyzer::expand)));
             } else {
-                return null;
+                return concat(Stream.of(call),
+                        call.getArguments().stream().flatMap(JavaSourceAnalyzer::expand));
             }
-        } catch (Exception e) {
-            // If resolution fails, skip this invocation
-            return null;
+        } else if (expr.isFieldAccessExpr()) {
+            return Stream.of(expr); // field access itself is a usage
+        } else if (expr.isObjectCreationExpr()) {
+            var newExpr = expr.asObjectCreationExpr();
+            return concat(Stream.of(newExpr),
+                    newExpr.getArguments().stream().flatMap(JavaSourceAnalyzer::expand));
+        } else if (expr.isCastExpr()) {
+            var cast = expr.asCastExpr();
+            return concat(Stream.of(cast), expand(cast.getExpression()));
+        } else if (expr.isInstanceOfExpr()) {
+            var inst = expr.asInstanceOfExpr();
+            return concat(Stream.of(inst), expand(inst.getExpression()));
+        } else if (expr.isVariableDeclarationExpr()) {
+            return expr.asVariableDeclarationExpr().getVariables().stream()
+                    .flatMap(varDecl -> {
+                        Stream<Node> typeNode = Stream.of(varDecl);
+                        Stream<Node> init = varDecl.getInitializer()
+                                .map(JavaSourceAnalyzer::expand)
+                                .orElse(Stream.empty());
+                        return concat(typeNode, init);
+                    });
+        } else if (expr.isAssignExpr()) {
+            var assign = expr.asAssignExpr();
+            return concat(expand(assign.getTarget()), expand(assign.getValue()));
+        } else if (expr.isConditionalExpr()) {
+            var cond = expr.asConditionalExpr();
+            return concat(concat(expand(cond.getCondition()), expand(cond.getThenExpr())),
+                    expand(cond.getElseExpr()));
+        } else if (expr.isLambdaExpr()) {
+            var lambda = expr.asLambdaExpr();
+            return concat(lambda.getParameters().stream().flatMap(JavaSourceAnalyzer::expand), expand(lambda.getBody()));
+        } else if (expr.isMethodReferenceExpr()) {
+            var ref = expr.asMethodReferenceExpr();
+            return concat(Stream.of(ref), expand(ref.getScope()));
+        } else if (expr.isClassExpr()) {
+            return Stream.of(expr);
+        } else if (expr.isArrayCreationExpr()) {
+            var arr = expr.asArrayCreationExpr();
+            Stream<Node> type = Stream.of(arr.getElementType());
+            Stream<Node> dims = arr.getLevels().stream()
+                    .flatMap(level -> level.getDimension()
+                            .map(JavaSourceAnalyzer::expand)
+                            .orElse(Stream.empty()));
+            Stream<Node> init = arr.getInitializer()
+                    .stream()
+                    .flatMap(initExpr -> initExpr.getValues().stream().flatMap(JavaSourceAnalyzer::expand));
+            return concat(concat(type, dims), init);
+        } else if (expr.isArrayAccessExpr()) {
+            var access = expr.asArrayAccessExpr();
+            return concat(expand(access.getName()), expand(access.getIndex()));
+        } else if (expr.isUnaryExpr()) {
+            return expand(expr.asUnaryExpr().getExpression());
+        } else if (expr.isEnclosedExpr()) {
+            return expand(expr.asEnclosedExpr().getInner());
+        } else if (expr.isSwitchExpr()) {
+            var switchExpr = expr.asSwitchExpr();
+            Stream<Node> selector = expand(switchExpr.getSelector());
+            Stream<Node> entries = switchExpr.getEntries().stream()
+                    .flatMap(entry -> {
+                        Stream<Node> labels = entry.getLabels().stream()
+                                .flatMap(JavaSourceAnalyzer::expand);
+                        Stream<Node> stmts = entry.getStatements().stream()
+                                .flatMap(JavaSourceAnalyzer::expand);
+                        return concat(labels, stmts);
+                    });
+            return concat(selector, entries);
+        } else if (expr.isTypePatternExpr()) {
+            var pattern = expr.asTypePatternExpr();
+            // The pattern's type is the interesting part; the variable name is not a class usage.
+            return concat(Stream.of(pattern), Stream.of(pattern.getType()));
+        } else {
+            // fallback: traverse children if any (though most common are covered)
+            return Stream.empty();
+//            return expr.getChildNodes().stream().flatMap(child -> {
+//                if (child instanceof Expression) {
+//                    return expand((Expression) child);
+//                } else if (child instanceof Statement) {
+//                    return expand((Statement) child);
+//                } else {
+//                    return Stream.empty();
+//                }
+//            });
+        }
+    }
+
+    private static Stream<Node> expand(IfStmt stmt) {
+        // keep original logic
+        var conditionStmt = stmt.getCondition();
+        var elseStmt = stmt.getElseStmt();
+        if (elseStmt.isPresent() && elseStmt.get().isIfStmt()) {
+            return concat(concat(expand(conditionStmt), expand(stmt.getThenStmt())),
+                    expand(elseStmt.get().asIfStmt()));
+        } else {
+            return elseStmt.map(elseStmtBody -> concat(concat(expand(conditionStmt), expand(stmt.getThenStmt())),
+                            expand(elseStmtBody)))
+                    .orElseGet(() -> concat(expand(conditionStmt), expand(stmt.getThenStmt())));
         }
     }
 
@@ -183,47 +337,32 @@ public class JavaSourceAnalyzer {
                 ));
     }
 
-    private static Stream<Node> expand(Statement stmt) {
-        if (stmt.isIfStmt()) {
-            return expand(stmt.asIfStmt());
-        } else if (stmt.isBlockStmt()) {
-            return stmt.asBlockStmt()
-                    .getStatements()
-                    .stream()
-                    .flatMap(JavaSourceAnalyzer::expand);
-        } else if (stmt.isExpressionStmt()) {
-            return expand(stmt.asExpressionStmt()
-                    .getExpression());
-        }
-        return Stream.of(stmt);
-    }
-
-    private static Stream<Node> expand(Expression expressionStmt) {
-        if (expressionStmt.isBinaryExpr()) {
-            return Stream.concat(expand(expressionStmt.asBinaryExpr().getLeft()),
-                    expand(expressionStmt.asBinaryExpr().getRight()));
-        } else if (expressionStmt.isMethodCallExpr()) {
-            return Stream.concat(Stream.of(expressionStmt.asMethodCallExpr().asMethodCallExpr()),
-                    expressionStmt.asMethodCallExpr()
-                            .asMethodCallExpr()
-                            .getArguments().stream()
-                            .flatMap(JavaSourceAnalyzer::expand));
-        } else if (expressionStmt.isFieldAccessExpr()) {
-            return Stream.of(expressionStmt);
-        }
-        return Stream.empty();
-    }
-
-    private static Stream<Node> expand(IfStmt stmt) {
-        var conditionStmt = stmt.getCondition();
-        var elseStmt = stmt.getElseStmt();
-        if (elseStmt.isPresent() && elseStmt.get().isIfStmt()) {
-            return concat(concat(expand(conditionStmt), expand(stmt.getThenStmt())),
-                    expand(elseStmt.get().asIfStmt()));
-        } else {
-            return elseStmt.map(elseStmtBody -> concat(concat(expand(conditionStmt), expand(stmt.getThenStmt())),
-                            expand(elseStmtBody)))
-                    .orElseGet(() -> concat(expand(conditionStmt), expand(stmt.getThenStmt())));
+    private static String extractUsage(Node node) {
+        try {
+            if (node instanceof MethodCallExpr mce) {
+                return mce.resolve().declaringType().getQualifiedName();
+            } else if (node instanceof FieldAccessExpr fae) {
+                return fae.resolve().asField().declaringType().getQualifiedName();
+            } else if (node instanceof ObjectCreationExpr oce) {
+                return oce.resolve().declaringType().getQualifiedName();
+            } else if (node instanceof CastExpr cast) {
+                return cast.getType().resolve().asReferenceType().getTypeDeclaration().map(ResolvedTypeDeclaration::getQualifiedName).orElse(null);
+            } else if (node instanceof InstanceOfExpr inst) {
+                return inst.getType().resolve().asReferenceType().getTypeDeclaration().map(ResolvedTypeDeclaration::getQualifiedName).orElse(null);
+            } else if (node instanceof VariableDeclarator varDecl) {
+                return varDecl.getType().resolve().asReferenceType().getTypeDeclaration().map(ResolvedTypeDeclaration::getQualifiedName).orElse(null);
+            } else if (node instanceof ClassExpr classExpr) {
+                return classExpr.getType().resolve().asReferenceType().getTypeDeclaration().map(ResolvedTypeDeclaration::getQualifiedName).orElse(null);
+            } else if (node instanceof MethodReferenceExpr methodRef) {
+                // resolve the type of the method reference's scope
+                return methodRef.getScope().calculateResolvedType().asReferenceType().getQualifiedName();
+            } else if (node instanceof TypePatternExpr pattern) {
+                return pattern.getType().resolve().asReferenceType().getTypeDeclaration().map(ResolvedTypeDeclaration::getQualifiedName).orElse(null);
+            }
+            return null;
+        } catch (Exception e) {
+            // resolution failed, skip this usage
+            return null;
         }
     }
 

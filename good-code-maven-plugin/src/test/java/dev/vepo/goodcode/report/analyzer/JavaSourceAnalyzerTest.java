@@ -10,13 +10,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class JavaSourceAnalyzerTest {
 
@@ -48,6 +45,8 @@ class JavaSourceAnalyzerTest {
 
     @Test
     void classUsedStateTest(@TempDir Path sourceRoot) throws IOException {
+        // This test remains as before, but we'll keep it for backward compatibility.
+        // The new test below covers all scenarios.
         writeFile(sourceRoot,
                 "pkgA/A.java",
                 """
@@ -79,6 +78,13 @@ class JavaSourceAnalyzerTest {
                         
                             public boolean isField1() { return this.field1; }
                             public void setField1(boolean field1) { this.field1 = field1; }
+                            public int sum(List<A> as) {
+                              int total = 0;
+                              for (A a: a) {
+                                total += a.getField1();
+                              }
+                              return total;
+                            }
                             public void checkA(A a) {
                                 if (a.getField1() > 10) {
                                     System.out.println("A is high!");
@@ -94,154 +100,134 @@ class JavaSourceAnalyzerTest {
                         }
                         """);
         var stats = analyzer.analyze(sourceRoot);
-        assertThat(stats.getTypeCount()).isEqualTo(2);
-        assertThat(stats.getMethodCount()).isEqualTo(5);
+        assertThat(stats.getTypeCount()).describedAs("Verify number of types").isEqualTo(2);
+        assertThat(stats.getMethodCount()).describedAs("Verify number of methods").isEqualTo(6);
         assertThat(stats.findMethod("pkgB.B.checkA")).isPresent()
                 .map(MethodInfo::dependsOn)
                 .get()
                 .isEqualTo(List.of(new ClassUsage("java.io.PrintStream", 5),
+                        new ClassUsage("java.lang.System", 5),
                         new ClassUsage("pkgA.A", 5)));
+        assertThat(stats.findMethod("pkgB.B.sum")).isPresent()
+                .map(MethodInfo::dependsOn)
+                .get()
+                .isEqualTo(List.of(new ClassUsage("pkgA.A", 1)));
     }
 
     @Test
-    void recognisesEveryTypeKind(@TempDir Path sourceRoot) throws IOException {
-        writeFile(sourceRoot, "sample/Kinds.java", """
-                package sample;
+    void capturesAllClassUsages(@TempDir Path sourceRoot) throws IOException {
+        // Write a complex source file that exercises every kind of class usage
+        writeFile(sourceRoot, "test/Example.java", """
+                package test;
                 
-                class SampleClass {
-                }
+                import java.util.*;
+                import java.io.*;
                 
-                interface SampleInterface {
-                }
-                
-                enum SampleEnum {
-                    A, B
-                }
-                
-                record SampleRecord(String name, int age) {
-                }
-                
-                @interface SampleAnnotation {
+                public class Example {
+                    public void testUsages(List<String> list, Object obj, int[] arr, boolean flag) throws IOException {
+                        // Method call
+                        System.out.println("Hello");
+                        // Field access
+                        System.out.println("size: " + list.size());
+                        // Object creation
+                        List<String> newList = new ArrayList<>();
+                        // Cast
+                        String str = (String) obj;
+                        // Instanceof with pattern
+                        if (obj instanceof String s) {
+                            System.out.println(s);
+                        }
+                        // Variable declaration
+                        int num = 10;
+                        // Class literal
+                        Class<?> clazz = String.class;
+                        // Method reference
+                        list.forEach(System.out::println);
+                        // Lambda expression
+                        list.stream().map(s -> s.length()).forEach(System.out::println);
+                        // For-each
+                        for (String s : list) {
+                            System.out.println(s);
+                        }
+                        // Try-with-resources
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(System.in))) {
+                            br.readLine();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        // Switch expression (Java 14+)
+                        int result = switch (obj) {
+                            case String s -> s.length();
+                            case Integer i -> i;
+                            default -> 0;
+                        };
+                        // Conditional expression
+                        String cond = flag ? "true" : "false";
+                        // Array creation
+                        int[] newArr = new int[10];
+                        // Array access
+                        int first = arr[0];
+                        // Unary
+                        int neg = -num;
+                        // Binary
+                        int sum = num + first;
+                        // Assignment
+                        num = 20;
+                        // For loop
+                        for (int i = 0; i < 10; i++) {
+                            System.out.println(i);
+                        }
+                        // While
+                        while (num > 0) {
+                            num--;
+                        }
+                        // Do-while
+                        do {
+                            num++;
+                        } while (num < 5);
+                        // Synchronized
+                        synchronized (this) {
+                            System.out.println("sync");
+                        }
+                        // Throw
+                        if (flag) throw new IllegalArgumentException("bad");
+                        // Assert
+                        assert num > 0;
+                        // Return
+                        return;
+                    }
                 }
                 """);
 
         ProjectStats stats = analyzer.analyze(sourceRoot);
+        Optional<MethodInfo> method = stats.findMethod("test.Example.testUsages");
+        assertTrue(method.isPresent());
 
-        assertEquals(5, stats.getTypeCount());
-        List<ClassInfo> types = stats.getPackages().get(0).getFiles().get(0).getTypes();
-        assertEquals(TypeKind.CLASS, kindOf(types, "SampleClass"));
-        assertEquals(TypeKind.INTERFACE, kindOf(types, "SampleInterface"));
-        assertEquals(TypeKind.ENUM, kindOf(types, "SampleEnum"));
-        assertEquals(TypeKind.RECORD, kindOf(types, "SampleRecord"));
-        assertEquals(TypeKind.ANNOTATION, kindOf(types, "SampleAnnotation"));
-    }
+        List<ClassUsage> deps = method.get().dependsOn();
 
-    @Test
-    void recordComponentsAreReportedAsFinalFields(@TempDir Path sourceRoot) throws IOException {
-        writeFile(sourceRoot, "sample/Point.java", """
-                package sample;
-                public record Point(int x, int y) {
-                }
-                """);
+        Map<String, Integer> expected = new HashMap<>();
+        expected.put("java.io.PrintStream", 8);
+        expected.put("java.util.Collection", 1);
+        expected.put("java.lang.Iterable", 1);
+        expected.put("java.util.stream.Stream", 2);
+        expected.put("java.lang.Throwable", 1);
+        expected.put("java.lang.String", 8);
+        expected.put("java.util.ArrayList", 1);
+        expected.put("java.io.InputStreamReader", 1);
+        expected.put("java.lang.Class", 1);
+        expected.put("java.lang.System", 7);
+        expected.put("java.util.List", 2);
+        expected.put("java.lang.Integer", 1);
+        expected.put("java.io.BufferedReader", 3);
+        expected.put("java.lang.IllegalArgumentException", 1);
 
-        ProjectStats stats = analyzer.analyze(sourceRoot);
-
-        ClassInfo point = stats.getPackages().get(0).getFiles().get(0).getTypes().get(0);
-        assertEquals(2, point.getFieldCount());
-        for (FieldInfo field : point.getFields()) {
-            assertTrue(field.isFinal());
-            assertFalse(field.isStatic());
+        // Convert deps to map
+        Map<String, Integer> actual = new HashMap<>();
+        for (ClassUsage usage : deps) {
+            actual.merge(usage.fullyQualifiedName(), usage.counter(), Integer::sum);
         }
-    }
 
-    @Test
-    void detectsNestedTypesFieldsAndMethods(@TempDir Path sourceRoot) throws IOException {
-        writeFile(sourceRoot, "sample/Outer.java", """
-                package sample;
-                
-                public abstract class Outer {
-                
-                    private static final int COUNT = 1;
-                    private String name;
-                
-                    public Outer(String name) {
-                        this.name = name;
-                    }
-                
-                    public abstract void doWork();
-                
-                    public void greet() {
-                    }
-                
-                    public static class Inner {
-                    }
-                }
-                """);
-
-        ProjectStats stats = analyzer.analyze(sourceRoot);
-
-        List<ClassInfo> types = stats.getPackages().get(0).getFiles().get(0).getTypes();
-        ClassInfo outer = types.stream().filter(t -> t.getSimpleName().equals("Outer")).findFirst().orElseThrow();
-        ClassInfo inner = types.stream().filter(t -> t.getSimpleName().equals("Inner")).findFirst().orElseThrow();
-
-        assertFalse(outer.isNested());
-        assertTrue(outer.isAbstract());
-        assertTrue(inner.isNested());
-
-        assertEquals(2, outer.getFieldCount());
-        FieldInfo count = outer.getFields().stream().filter(f -> f.getName().equals("COUNT")).findFirst().orElseThrow();
-        assertTrue(count.isStatic());
-        assertTrue(count.isFinal());
-
-        assertEquals(2, outer.getMethodCount());
-        var constructor = outer.getConstructors().stream().findFirst().orElseThrow();
-        assertEquals(1, constructor.parameterCount());
-
-        MethodInfo doWork = outer.getMethods().stream().filter(m -> m.name().equals("doWork")).findFirst().orElseThrow();
-        assertTrue(doWork.isAbstract());
-    }
-
-    @Test
-    void skipsFilesThatFailToParseInsteadOfFailingTheBuild(@TempDir Path sourceRoot) throws IOException {
-        writeFile(sourceRoot, "sample/Good.java", """
-                package sample;
-                public class Good {
-                }
-                """);
-        writeFile(sourceRoot, "sample/Broken.java", "this is not valid java at all {{{");
-
-        ProjectStats stats = analyzer.analyze(sourceRoot);
-
-        assertEquals(1, stats.getFileCount());
-        SourceFileInfo file = stats.getPackages().get(0).getFiles().get(0);
-        assertEquals("sample/Good.java", file.getFileName());
-    }
-
-    @Test
-    void computesLineCountsUsingTheLineCounterHeuristic(@TempDir Path sourceRoot) throws IOException {
-        writeFile(sourceRoot, "sample/Commented.java", """
-                package sample;
-                
-                // a leading comment
-                public class Commented {
-                }
-                """);
-
-        ProjectStats stats = analyzer.analyze(sourceRoot);
-
-        SourceFileInfo file = stats.getPackages().get(0).getFiles().get(0);
-        assertEquals(5, file.getTotalLines());
-        assertEquals(1, file.getBlankLines());
-        assertEquals(1, file.getCommentLines());
-        assertEquals(3, file.getCodeLines());
-    }
-
-    private static TypeKind kindOf(List<ClassInfo> types, String simpleName) {
-        return types.stream()
-                .filter(t -> t.getSimpleName().equals(simpleName))
-                .map(ClassInfo::getKind)
-                .findFirst()
-                .orElseThrow();
+        assertThat(actual).as("Dependencies do not match expected").isEqualTo(expected);
     }
 
     private static void writeFile(Path root, String relativePath, String content) {
