@@ -55,9 +55,9 @@ Add it to the `<reporting>` section of your `pom.xml`:
 <reporting>
   <plugins>
     <plugin>
-      <groupId>dev.vepo.goodcode</groupId>
+      <groupId>dev.vepo</groupId>
       <artifactId>good-code-maven-plugin</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
+      <version>0.0.1-SNAPSHOT</version>
     </plugin>
   </plugins>
 </reporting>
