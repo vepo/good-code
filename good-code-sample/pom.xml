@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>dev.vepo.goodcode</groupId>
-    <artifactId>good-code-parent</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <relativePath>../pom.xml</relativePath>
-  </parent>
+    <parent>
+        <groupId>dev.vepo.goodcode</groupId>
+        <artifactId>good-code-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
 
-  <artifactId>good-code-sample</artifactId>
-  <packaging>jar</packaging>
+    <artifactId>good-code-sample</artifactId>
+    <packaging>jar</packaging>
 
-  <name>Good Code Sample</name>
-  <description>
+    <name>Good Code Sample</name>
+    <description>
     Small sample project used to exercise the good-code-maven-plugin report:
     run "mvn site" here and open target/site/good-code-report.html.
   </description>
 
-  <reporting>
-    <plugins>
-      <plugin>
-        <groupId>dev.vepo.goodcode</groupId>
-        <artifactId>good-code-maven-plugin</artifactId>
-        <version>${project.version}</version>
-      </plugin>
-    </plugins>
-  </reporting>
+    <reporting>
+        <plugins>
+            <plugin>
+                <groupId>dev.vepo.goodcode</groupId>
+                <artifactId>good-code-maven-plugin</artifactId>
+                <version>${project.version}</version>
+            </plugin>
+        </plugins>
+    </reporting>
 
 </project>
