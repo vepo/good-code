@@ -32,18 +32,14 @@ set_version() {
     -DgenerateBackupPoms=false
 }
 
-# Enable globstar for recursive ** matching
-shopt -s globstar
-
 set_version "${RELEASE}"
-# Stage all pom.xml files that were modified (root + any children with explicit versions)
-git add **/pom.xml
+git add pom.xml **/pom.xml
 git commit -m "Prepare release ${RELEASE}"
 
 git tag -a "${TAG}" -m "Release ${RELEASE}"
 
 set_version "${NEXT}"
-git add **/pom.xml
+git add pom.xml **/pom.xml
 git commit -m "Prepare for next development iteration ${NEXT}"
 
 git push origin HEAD
