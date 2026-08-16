@@ -7,7 +7,7 @@
   <parent>
     <groupId>dev.vepo.goodcode</groupId>
     <artifactId>good-code-parent</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>0.0.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>good-code-sample</artifactId>
