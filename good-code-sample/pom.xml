@@ -8,6 +8,7 @@
     <groupId>dev.vepo.goodcode</groupId>
     <artifactId>good-code-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>good-code-sample</artifactId>
