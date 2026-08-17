@@ -9,7 +9,6 @@ import java.util.List;
  */
 public class ClassInfo {
 
-
     public static final class ClassInfoBuilder {
         private String simpleName;
         private String qualifiedName;
@@ -144,6 +143,10 @@ public class ClassInfo {
 
     public int getConstructorCount() {
         return constructors.size();
+    }
+
+    public int getCyclomaticComplexity() {
+        return methods.stream().mapToInt(MethodInfo::cyclomaticComplexity).sum();
     }
 
 }

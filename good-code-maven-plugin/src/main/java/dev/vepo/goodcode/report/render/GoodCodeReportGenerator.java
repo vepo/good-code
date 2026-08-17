@@ -113,14 +113,15 @@ public class GoodCodeReportGenerator {
         sink.sectionTitle1_();
 
         sink.table();
-        headerRow("Package", "Files", "Types", "Fields", "Methods", "Lines of code");
+        headerRow("Package", "Files", "Types", "Fields", "Methods", "Lines of code", "Cyclomatic Complexity");
         for (PackageInfo pkg : stats.getPackages()) {
             row(pkg.getName(),
                     String.valueOf(pkg.getFileCount()),
                     String.valueOf(pkg.getTypeCount()),
                     String.valueOf(pkg.getFieldCount()),
                     String.valueOf(pkg.getMethodCount()),
-                    String.valueOf(pkg.getCodeLines()));
+                    String.valueOf(pkg.getCodeLines()),
+                    String.valueOf(pkg.getCyclomaticComplexity()));
         }
         sink.table_();
 
@@ -243,7 +244,7 @@ public class GoodCodeReportGenerator {
         sink.sectionTitle1_();
 
         sink.table();
-        headerRow("Package", "Type", "Kind", "Nested", "Abstract", "Lines of code", "Fields", "Methods");
+        headerRow("Package", "Type", "Kind", "Nested", "Abstract", "Lines of code", "Fields", "Methods",  "Cyclomatic Complexity");
 
         for (Map.Entry<String, List<ClassInfo>> pkgEntry : packageToTypes.entrySet()) {
             String pkgName = pkgEntry.getKey();
@@ -266,6 +267,7 @@ public class GoodCodeReportGenerator {
                 cell(String.valueOf(type.getLinesOfCode()));
                 cell(String.valueOf(type.getFieldCount()));
                 cell(String.valueOf(type.getMethodCount()));
+                cell(String.valueOf(type.getCyclomaticComplexity()));
 
                 sink.tableRow_();
             }

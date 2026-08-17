@@ -50,7 +50,7 @@ class GoodCodeReportGeneratorTest {
         SourceFileInfo file = new SourceFileInfo("Foo.java", "sample", 10, 1, 1);
         ClassInfo type = new ClassInfo("Foo", "sample.Foo", TypeKind.CLASS, false, false, 8);
         type.addField(new FieldInfo("x", "int", false, false));
-        type.addMethod(new MethodInfo("doIt", 0, false, false, Collections.emptyList()));
+        type.addMethod(new MethodInfo("doIt", 0, false, false, 0, Collections.emptyList()));
         file.addType(type);
         pkg.addFile(file);
 

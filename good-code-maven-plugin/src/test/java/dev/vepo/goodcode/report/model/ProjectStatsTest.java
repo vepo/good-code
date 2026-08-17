@@ -28,7 +28,7 @@ class ProjectStatsTest {
         classA.addField(new FieldInfo("x", "int", false, false));
         classA.addField(new FieldInfo("y", "int", false, false));
         classA.addConstructor(new ConstructorInfo(0));
-        classA.addMethod(new MethodInfo("getX", 0, false, false, Collections.emptyList()));
+        classA.addMethod(new MethodInfo("getX", 0, false, false, 0, Collections.emptyList()));
         fileA.addType(classA);
         pkgOne.addFile(fileA);
 

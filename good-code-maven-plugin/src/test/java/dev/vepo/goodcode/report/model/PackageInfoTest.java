@@ -31,7 +31,7 @@ class PackageInfoTest {
 
         SourceFileInfo fileB = new SourceFileInfo("B.java", "sample", 5, 0, 0);
         ClassInfo classB = new ClassInfo("B", "sample.B", TypeKind.INTERFACE, false, false, 5);
-        classB.addMethod(new MethodInfo("doIt", 1, false, true, Collections.emptyList()));
+        classB.addMethod(new MethodInfo("doIt", 1, false, true, 0, Collections.emptyList()));
         fileB.addType(classB);
 
         pkg.addFile(fileA);

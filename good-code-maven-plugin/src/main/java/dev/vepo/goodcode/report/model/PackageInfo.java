@@ -47,6 +47,13 @@ public class PackageInfo {
         return files.stream().flatMap(f -> f.getTypes().stream()).mapToInt(ClassInfo::getConstructorCount).sum();
     }
 
+    public int getCyclomaticComplexity() {
+        return files.stream()
+                .flatMap(f -> f.getTypes().stream())
+                .mapToInt(ClassInfo::getCyclomaticComplexity)
+                .sum();
+    }
+
     public int getCodeLines() {
         return files.stream().mapToInt(SourceFileInfo::getCodeLines).sum();
     }

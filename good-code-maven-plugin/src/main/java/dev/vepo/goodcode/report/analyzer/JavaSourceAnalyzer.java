@@ -39,10 +39,12 @@ public class JavaSourceAnalyzer {
 
     private final Log log;
     private final Charset sourceEncoding;
+    private final CyclomaticComplexityCalculator ccCalculator;
 
     public JavaSourceAnalyzer(Log log, Charset sourceEncoding) {
         this.log = log;
         this.sourceEncoding = sourceEncoding;
+        this.ccCalculator = new CyclomaticComplexityCalculator();
     }
 
     public ProjectStats analyze(Path sourceRoot) throws IOException {
@@ -134,6 +136,7 @@ public class JavaSourceAnalyzer {
                         method.getParameters().size(),
                         method.isStatic(),
                         method.isAbstract(),
+                        method.getBody().map(ccCalculator::measure).orElse(0),
                         method.getBody().map(JavaSourceAnalyzer::extractUsage).orElseGet(Collections::emptyList)
                 ));
             } else if (member instanceof ConstructorDeclaration constructor) {
